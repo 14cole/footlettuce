@@ -496,3 +496,87 @@ __all__ = [
     "load_stl",
     "rcs_3d_at",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Script entry — edit the values in this block and run the file directly.
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    # ---- INPUT / OUTPUT ---------------------------------------------------
+    INPUT_PATH  = "input_2d.grim"
+    OUTPUT_PATH = "output_3d.grim"       # set to None to skip saving
+
+    # ---- GEOMETRY ---------------------------------------------------------
+    LENGTH_M        = 1.5                # extrusion length L (meters)
+    EXTRUSION_AXIS  = "z"                # metadata label only
+    BROADSIDE_EL    = 0.0                # elevation (deg) where 2D plane sits
+
+    # ---- OUTPUT AXES ------------------------------------------------------
+    # Use None to inherit the source axis; otherwise provide a 1-D array.
+    AZIMUTHS_DEG    = np.arange(0.0, 360.0, 5.0)        # e.g. 5-deg steps
+    ELEVATIONS_DEG  = np.linspace(-30.0, 30.0, 61)      # 1-deg steps over +/-30
+    FREQUENCIES     = None                              # keep source frequencies
+    POLARIZATIONS   = None                              # keep all source pols
+
+    # ---- BEHAVIOUR --------------------------------------------------------
+    INPUT_DOMAIN    = "scattering_width"  # "scattering_width" | "rcs"
+    PRESERVE_PHASE  = True
+
+    # ---- DISPLAY ----------------------------------------------------------
+    PRINT_TABLE     = True
+    MAX_PRINT_ROWS  = 50
+
+    # ======================================================================
+    # Run
+    # ======================================================================
+    grid_2d = RcsGrid.load(INPUT_PATH)
+    print(f"Loaded 2D grid: {INPUT_PATH}")
+    print(f"  shape: az={len(grid_2d.azimuths)}, el={len(grid_2d.elevations)}, "
+          f"f={len(grid_2d.frequencies)}, pol={list(grid_2d.polarizations)}")
+    print(f"  freq unit: {(grid_2d.units or {}).get('frequency', 'GHz')}")
+
+    grid_3d = expand_2d_to_3d(
+        grid_2d,
+        length=LENGTH_M,
+        azimuths_deg=AZIMUTHS_DEG,
+        elevations_deg=ELEVATIONS_DEG,
+        frequencies=FREQUENCIES,
+        polarizations=POLARIZATIONS,
+        extrusion_axis=EXTRUSION_AXIS,
+        input_domain=INPUT_DOMAIN,
+        broadside_elevation_deg=BROADSIDE_EL,
+        preserve_phase=PRESERVE_PHASE,
+    )
+    print(f"Expanded shape: az={len(grid_3d.azimuths)}, el={len(grid_3d.elevations)}, "
+          f"f={len(grid_3d.frequencies)}, pol={list(grid_3d.polarizations)}")
+
+    if OUTPUT_PATH:
+        out = grid_3d.save(OUTPUT_PATH)
+        print(f"Wrote: {out}")
+
+    if PRINT_TABLE:
+        print("# azimuth_deg  elevation_deg  frequency  polarization  sigma_m2  sigma_dBsm")
+        count = 0
+        total = int(np.prod(grid_3d.rcs_power.shape))
+        done = False
+        for ai, az in enumerate(grid_3d.azimuths):
+            if done:
+                break
+            for ei, el in enumerate(grid_3d.elevations):
+                if done:
+                    break
+                for fi, freq in enumerate(grid_3d.frequencies):
+                    if done:
+                        break
+                    for pi, pol in enumerate(grid_3d.polarizations):
+                        if count >= MAX_PRINT_ROWS:
+                            print(f"# ... ({total - MAX_PRINT_ROWS} more rows suppressed; "
+                                  f"raise MAX_PRINT_ROWS to see them)")
+                            done = True
+                            break
+                        p = float(grid_3d.rcs_power[ai, ei, fi, pi])
+                        dbsm = 10.0 * np.log10(max(p, 1e-12))
+                        print(f"{float(az):12.4f}  {float(el):13.4f}  {float(freq):10.4f}  "
+                              f"{str(pol):>12}  {p:12.6e}  {dbsm:10.4f}")
+                        count += 1
